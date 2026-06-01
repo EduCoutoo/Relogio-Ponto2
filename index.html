@@ -113,143 +113,27 @@
 </script>
 
   <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcHewyj09jageeljbK9u88ngXe12RNh4XVzrzuMeiK6qF6N5zxeDlDbXQwzLWHNc-a/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcHewyj09jageeljbK9u88ngXe12RNh4XVzrzuMeiK6qF6N5zxeDlDbXQwzLWHNc-a/exec";  
+    const LOCAIS_PERMITIDOS = [
+  { lat: -23.136030, lon: -47.168871 },
+  { lat: -23.126797, lon: -47.164379 }
+    ];
+    const RAIO_METROS = 270; // +/- inutil por agora
+    const RAIO_METROS = 27; // +/- inutil por agora
+    const TEMPO_MAX = 15;
 
-const LOCAIS_PERMITIDOS = [
-  {
-    lat: -23.1360725,
-    lon: -47.1688935
-  },
-  {
-    lat: -23.126797,
-    lon: -47.164379
-  }
-];
+    //ve se nao fez coisa errada
+    let  UltimaV = Date.now();
 
-const RAIO_ENTRADA = 6;
-const RAIO_SAIDA = 10;
-
-const PRECISAO_MAXIMA = 14; // metros
-const LEITURAS_FORA = 2;
-
-let UltimaV = Date.now();
-
-let dentroDaArea = false;
-let contadorFora = 0;
-
-const historicoPosicoes = [];
-
-function calcularDistancia(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-
-  const toRad = x => x * Math.PI / 180;
-
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-    Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function obterPosicaoFiltrada(lat, lon) {
-
-  historicoPosicoes.push({ lat, lon });
-
-  if (historicoPosicoes.length > 5) {
-    historicoPosicoes.shift();
-  }
-
-  const mediaLat =
-    historicoPosicoes.reduce((s, p) => s + p.lat, 0) /
-    historicoPosicoes.length;
-
-  const mediaLon =
-    historicoPosicoes.reduce((s, p) => s + p.lon, 0) /
-    historicoPosicoes.length;
-
-  return {
-    lat: mediaLat,
-    lon: mediaLon
-  };
-}
-
-function verificarLocalizacao(position) {
-
-  const accuracy = position.coords.accuracy;
-
-  if (accuracy > PRECISAO_MAXIMA) {
-    console.log("GPS ignorado. Precisão ruim:", accuracy, "m");
-    return;
-  }
-
-  const posicaoFiltrada = obterPosicaoFiltrada(
-    position.coords.latitude,
-    position.coords.longitude
-  );
-
-  let menorDistancia = Infinity;
-
-  for (const local of LOCAIS_PERMITIDOS) {
-
-    const distancia = calcularDistancia(
-      posicaoFiltrada.lat,
-      posicaoFiltrada.lon,
-      local.lat,
-      local.lon
-    );
-
-    menorDistancia = Math.min(menorDistancia, distancia);
-  }
-
-  if (!dentroDaArea) {
-
-    if (menorDistancia <= RAIO_ENTRADA) {
-      dentroDaArea = true;
-      contadorFora = 0;
-
-      console.log("Entrou na área");
+    // ve se nao esta muito longe do ponto selecionado
+    function calcularDistancia(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = x => x * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
-
-  } else {
-
-    if (menorDistancia > RAIO_SAIDA) {
-
-      contadorFora++;
-
-      if (contadorFora >= LEITURAS_FORA) {
-        dentroDaArea = false;
-        contadorFora = 0;
-
-        console.log("Saiu da área");
-      }
-
-    } else {
-      contadorFora = 0;
-    }
-  }
-
-  console.log({
-    distancia: menorDistancia.toFixed(2) + " m",
-    accuracy: accuracy.toFixed(1) + " m",
-    dentroDaArea,
-    contadorFora
-  });
-}
-
-navigator.geolocation.watchPosition(
-  verificarLocalizacao,
-  erro => console.error(erro),
-  {
-    enableHighAccuracy: true,
-    timeout: 10000,
-    maximumAge: 0
-  }
-);
     // fala se ta fazendo coisa errada
     function mostrarPopup(msg) {
       const popup = document.getElementById("popup");
