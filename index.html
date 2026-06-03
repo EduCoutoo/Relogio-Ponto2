@@ -118,7 +118,9 @@
   { lat: -23.136030, lon: -47.168871 },
   { lat: -23.126797, lon: -47.164379 }
     ];
-    const RAIO_METROS = 27; // +/- inutil por agora
+    const RAIO_METROS = 20;
+    const ACCURACY_MAXIMA = 15;
+    const LEITURAS_GPS = 3;
     const TEMPO_MAX = 15;
 
     //ve se nao fez coisa errada
@@ -164,6 +166,59 @@
     .join('')
     .substring(0, 16);
 }
+    function obterMelhorPosicao() {
+  return new Promise((resolve, reject) => {
+
+    let melhor = null;
+    let leituras = 0;
+
+    function capturar() {
+
+      navigator.geolocation.getCurrentPosition(
+
+        pos => {
+
+          leituras++;
+
+          if (
+            !melhor ||
+            pos.coords.accuracy < melhor.coords.accuracy
+          ) {
+            melhor = pos;
+          }
+
+          if (leituras >= LEITURAS_GPS) {
+
+            if (melhor.coords.accuracy > ACCURACY_MAXIMA) {
+              reject(
+                new Error(
+                  `GPS impreciso (${Math.round(melhor.coords.accuracy)}m)`
+                )
+              );
+              return;
+            }
+
+            resolve(melhor);
+            return;
+          }
+
+          setTimeout(capturar, 400);
+        },
+
+        err => reject(err),
+
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+
+      );
+    }
+
+    capturar();
+  });
+}
 let jaEnviado = false;
 
 function baterPonto() {
@@ -191,75 +246,129 @@ function baterPonto() {
     alert("⏰ Tempo esgotado para obter localização.");
   }, 6000);
 
-  navigator.geolocation.getCurrentPosition(
-    function(pos) {
-      clearTimeout(timeout);
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
+  obterMelhorPosicao()
 
-      const dentroDeRaio = LOCAIS_PERMITIDOS.some(local =>
-        calcularDistancia(local.lat, local.lon, lat, lon) <= RAIO_METROS
+.then(function(pos) {
+
+  clearTimeout(timeout);
+
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+  const accuracy = pos.coords.accuracy;
+
+  console.log("GPS:", {
+    lat,
+    lon,
+    accuracy
+  });
+
+  const dentroDeRaio = LOCAIS_PERMITIDOS.some(local =>
+    calcularDistancia(
+      local.lat,
+      local.lon,
+      lat,
+      lon
+    ) <= RAIO_METROS
+  );
+
+  if (!dentroDeRaio) {
+    mostrarPopup("❌ Fora da área permitida!");
+    atualizarMsg("");
+    jaEnviado = false;
+    return;
+  }
+
+  atualizarMsg(`✅ ${tipo} registrada`, "#27ae60");
+
+  const body =
+    `nome=${encodeURIComponent(nome)}` +
+    `&lat=${lat}` +
+    `&lon=${lon}` +
+    `&tipo=${encodeURIComponent(tipo)}` +
+    `&token=${encodeURIComponent(TOKEN)}`;
+
+  const controller = new AbortController();
+
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    2500
+  );
+
+  fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type":
+        "application/x-www-form-urlencoded"
+    },
+    body: body,
+    keepalive: true,
+    signal: controller.signal
+  })
+
+  .then(response => {
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok)
+      throw new Error("Erro HTTP");
+
+    return response.text();
+  })
+
+  .then(msg => {
+
+    if (msg.startsWith("❌")) {
+      atualizarMsg(msg, "#e74c3c");
+      jaEnviado = false;
+    }
+  })
+
+  .catch(err => {
+
+    clearTimeout(timeoutId);
+
+    if (err.name === "AbortError") {
+
+      console.log(
+        "⏰ Cold start — processamento em background"
       );
 
-      if (!dentroDeRaio) {
-        mostrarPopup("❌ Fora da área permitida!");
-        atualizarMsg("");
-        return;
-      }
+    } else {
 
-      // ✅ Feedback IMEDIATO — usuário vê sucesso antes do envio terminar
-atualizarMsg(`✅ ${tipo} registrada`, "#27ae60");
+      atualizarMsg(
+        "⚠️ Envio falhou",
+        "#e74c3c"
+      );
 
-// ✅ Prepara os dados
-const body = `nome=${encodeURIComponent(nome)}&lat=${lat}&lon=${lon}&tipo=${encodeURIComponent(tipo)}&token=${encodeURIComponent(TOKEN)}`;
+      mostrarPopup("Erro de conexão");
 
-// ✅ Timeout de 2.5s só para detectar falhas reais (não cold start)
-const controller = new AbortController();
-const timeoutId = setTimeout(() => controller.abort(), 2500);
+      jaEnviado = false;
 
-// ✅ Envia com keepalive: true (continua após sair da página)
-fetch(SCRIPT_URL, {
-  method: "POST",
-  headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  body: body,
-  keepalive: true,      // ← permite continuar após fechar aba
-  signal: controller.signal
+      console.error(err);
+    }
+  });
+
 })
-.then(response => {
-  clearTimeout(timeoutId);
-  if (!response.ok) throw new Error("Erro HTTP");
-  return response.text();
-})
-.then(msg => {
-  // Se respondeu rápido: só corrige se for erro
-  if (msg.startsWith("❌")) {
-    atualizarMsg(msg, "#e74c3c");
-    jaEnviado = false;
-  }
-})
-.catch(err => {
-  clearTimeout(timeoutId);
-  if (err.name === "AbortError") {
-    // ✅ Timeout = provavelmente cold start — mas dados estão sendo processados!
-    console.log("⏰ Cold start — processamento em background");
-    // Nada muda: usuário já viu o ✅
-  } else {
-    // ❌ Falha real: rede, CORS, script 404
-    atualizarMsg("⚠️ Envio falhou", "#e74c3c");
-    mostrarPopup("Erro de conexão");
-    jaEnviado = false;
-    console.error("Erro real no envio:", err);
-  }
-});
-    },
-    function() {
-      clearTimeout(timeout);
-      atualizarMsg("");
-      alert("📍 GPS indisponível. Permita localização.");
-    },
-    { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
+
+.catch(function(err) {
+
+  clearTimeout(timeout);
+
+  atualizarMsg("");
+
+  jaEnviado = false;
+
+  mostrarPopup(
+    err.message ||
+    "Erro ao obter localização"
   );
+});
 }
+    console.log({
+  lat,
+  lon,
+  accuracy
+});
   </script>
 </body>
 </html>
