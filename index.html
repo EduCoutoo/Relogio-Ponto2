@@ -119,7 +119,7 @@
   { lat: -23.126797, lon: -47.164379 }
     ];
     const RAIO_METROS = 20;
-    const ACCURACY_MAXIMA = 15;
+    const ACCURACY_MAXIMA = 30;
     const LEITURAS_GPS = 3;
     const TEMPO_MAX = 15;
 
@@ -244,7 +244,7 @@ function baterPonto() {
   const timeout = setTimeout(() => {
     atualizarMsg("");
     alert("⏰ Tempo esgotado para obter localização.");
-  }, 6000);
+  }, 15000);
 
   obterMelhorPosicao()
 
