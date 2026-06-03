@@ -226,7 +226,7 @@ function baterPonto() {
     alert("✅ Ponto já enviado. Reescaneie o QR Code para bater outro.");
     return;
   }
-  jaEnviado = true;
+  
   const nome = document.getElementById("nome").value;
   const tipo = document.getElementById("tipoPonto").value;
 
@@ -279,6 +279,7 @@ function baterPonto() {
   }
 
   atualizarMsg(`✅ ${tipo} registrada`, "#27ae60");
+  jaEnviado = true;
 
   const body =
     `nome=${encodeURIComponent(nome)}` +
