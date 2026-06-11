@@ -120,6 +120,8 @@
     ];
     const RAIO_METROS = 27;
     const ACCURACY_MAXIMA = 35;
+    const ACCURACY_MINIMA = 10;  
+    const FRESHNESS_MS = 6000;  
     const LEITURAS_GPS = 2;
     const TEMPO_MAX = 15;
 
@@ -166,53 +168,67 @@
     .join('')
     .substring(0, 16);
 }
-    function obterMelhorPosicao() {
+    // ── Pré-aquecimento: inicia GPS assim que a página carrega ──────────────
+let preWarmedPos = null;
+let watchId = null;
+
+(function preAquecerGPS() {
+  if (!navigator.geolocation) return;
+  watchId = navigator.geolocation.watchPosition(
+    pos => {
+      if (!preWarmedPos || pos.coords.accuracy < preWarmedPos.coords.accuracy)
+        preWarmedPos = pos;
+    },
+    () => {}, // falha silenciosa — é só aquecimento
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+})();
+
+function obterMelhorPosicao() {
   return new Promise((resolve, reject) => {
+
+  
+    if (
+      preWarmedPos &&
+      preWarmedPos.coords.accuracy <= ACCURACY_MAXIMA &&
+      Date.now() - preWarmedPos.timestamp <= FRESHNESS_MS
+    ) {
+      return resolve(preWarmedPos);
+    }
 
     let melhor = null;
     let leituras = 0;
 
+    const globalTimeout = setTimeout(
+      () => reject(new Error("Tempo esgotado para obter localização")),
+      TEMPO_MAX * 1000
+    );
+
     function capturar() {
-
       navigator.geolocation.getCurrentPosition(
-
         pos => {
-
           leituras++;
-
-          if (
-            !melhor ||
-            pos.coords.accuracy < melhor.coords.accuracy
-          ) {
+          if (!melhor || pos.coords.accuracy < melhor.coords.accuracy)
             melhor = pos;
-          }
 
-          if (leituras >= LEITURAS_GPS) {
-
-            if (melhor.coords.accuracy > ACCURACY_MAXIMA) {
-              reject(
-                new Error(
-                  `GPS impreciso (${Math.round(melhor.coords.accuracy)}m)`
-                )
-              );
-              return;
-            }
-
+          if (melhor.coords.accuracy <= ACCURACY_MINIMA) {
+            clearTimeout(globalTimeout);
             resolve(melhor);
             return;
           }
 
-          setTimeout(capturar, 400);
+          if (leituras >= LEITURAS_GPS) {
+            clearTimeout(globalTimeout);
+            melhor.coords.accuracy > ACCURACY_MAXIMA
+              ? reject(new Error(`GPS impreciso (${Math.round(melhor.coords.accuracy)}m)`))
+              : resolve(melhor);
+            return;
+          }
+
+          setTimeout(capturar, 200); // era 400ms
         },
-
-        err => reject(err),
-
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-
+        err => { clearTimeout(globalTimeout); reject(err); },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
       );
     }
 
@@ -280,6 +296,11 @@ function baterPonto() {
 
   atualizarMsg(`✅ ${tipo} registrada`, "#27ae60");
   jaEnviado = true;
+
+  if (watchId !== null) {
+  navigator.geolocation.clearWatch(watchId);
+  watchId = null;
+}
 
   const body =
     `nome=${encodeURIComponent(nome)}` +
