@@ -120,7 +120,6 @@
     ];
     const RAIO_METROS = 27;
     const ACCURACY_MAXIMA = 35;
-    const ACCURACY_MINIMA = 10;  
     const FRESHNESS_MS = 6000;  
     const LEITURAS_GPS = 2;
     const TEMPO_MAX = 15;
@@ -210,12 +209,6 @@ function obterMelhorPosicao() {
           leituras++;
           if (!melhor || pos.coords.accuracy < melhor.coords.accuracy)
             melhor = pos;
-
-          if (melhor.coords.accuracy <= ACCURACY_MINIMA) {
-            clearTimeout(globalTimeout);
-            resolve(melhor);
-            return;
-          }
 
           if (leituras >= LEITURAS_GPS) {
             clearTimeout(globalTimeout);
