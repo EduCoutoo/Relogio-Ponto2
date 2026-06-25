@@ -237,94 +237,149 @@ function baterPonto() {
     alert("✅ Ponto já enviado. Reescaneie o QR Code para bater outro.");
     return;
   }
-
+  
   const nome = document.getElementById("nome").value;
   const tipo = document.getElementById("tipoPonto").value;
+
   if (!nome) return alert("⚠️ Selecione seu nome.");
   if (!tipo) return alert("⚠️ Selecione o tipo de ponto.");
 
+  // 🔑 Token = nome + timestamp (últimos 6 dígitos) + segundos arredondados
+  // Ex: PAULO_1712345678_45 → só válido por ~30s
+  const now = Math.floor(Date.now() / 1000); // segundos
+  const slot = Math.floor(now / 30); // bloco de 30s
+  const token = `${nome}_${now % 1000000}_${slot}`;
+
   atualizarMsg("📍 Localizando…");
 
-  obterMelhorPosicao()
-    .then(pos => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
+  const timeout = setTimeout(() => {
+    atualizarMsg("");
+    alert("⏰ Tempo esgotado para obter localização.");
+  }, 15000);
 
-      const dentroDeRaio = LOCAIS_PERMITIDOS.some(local =>
-        calcularDistancia(local.lat, local.lon, lat, lon) <= RAIO_METROS
+  obterMelhorPosicao()
+
+.then(function(pos) {
+
+  clearTimeout(timeout);
+
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+  const accuracy = pos.coords.accuracy;
+
+  console.log("GPS:", {
+    lat,
+    lon,
+    accuracy
+  });
+
+  const dentroDeRaio = LOCAIS_PERMITIDOS.some(local =>
+    calcularDistancia(
+      local.lat,
+      local.lon,
+      lat,
+      lon
+    ) <= RAIO_METROS
+  );
+
+  if (!dentroDeRaio) {
+    mostrarPopup("❌ Fora da área permitida!");
+    atualizarMsg("");
+    jaEnviado = false;
+    return;
+  }
+
+  atualizarMsg(`✅ ${tipo} registrada`, "#27ae60");
+  jaEnviado = true;
+
+  if (watchId !== null) {
+  navigator.geolocation.clearWatch(watchId);
+  watchId = null;
+}
+
+  const body =
+    `nome=${encodeURIComponent(nome)}` +
+    `&lat=${lat}` +
+    `&lon=${lon}` +
+    `&tipo=${encodeURIComponent(tipo)}` +
+    `&token=${encodeURIComponent(TOKEN)}`;
+
+  const controller = new AbortController();
+
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    2500
+  );
+
+  fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type":
+        "application/x-www-form-urlencoded"
+    },
+    body: body,
+    keepalive: true,
+    signal: controller.signal
+  })
+
+  .then(response => {
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok)
+      throw new Error("Erro HTTP");
+
+    return response.text();
+  })
+
+  .then(msg => {
+
+    if (msg.startsWith("❌")) {
+      atualizarMsg(msg, "#e74c3c");
+      jaEnviado = false;
+    }
+  })
+
+  .catch(err => {
+
+    clearTimeout(timeoutId);
+
+    if (err.name === "AbortError") {
+
+      console.log(
+        "⏰ Cold start — processamento em background"
       );
 
-      if (!dentroDeRaio) {
-        mostrarPopup("❌ Fora da área permitida!");
-        atualizarMsg("");
-        return;
-      }
+    } else {
 
-      // ✅ GPS confirmado — agora envia ao servidor
-      jaEnviado = true; // bloqueia duplo clique enquanto envia
-      atualizarMsg("📤 Enviando…", "#2980b9");
+      atualizarMsg(
+        "⚠️ Envio falhou",
+        "#e74c3c"
+      );
 
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
+      mostrarPopup("Erro de conexão");
 
-      // Avisa se o servidor estiver demorando (cold start do GAS)
-      const avisoEspera = setTimeout(() => {
-        atualizarMsg("⏳ Servidor demorando… aguarde até 30s", "#888");
-      }, 6000);
+      jaEnviado = false;
 
-      const body =
-        `nome=${encodeURIComponent(nome)}` +
-        `&lat=${lat}&lon=${lon}` +
-        `&tipo=${encodeURIComponent(tipo)}` +
-        `&token=${encodeURIComponent(TOKEN)}`;
+      console.error(err);
+    }
+  });
 
-      const controller = new AbortController();
-      const fetchTimeout = setTimeout(() => controller.abort(), 50000); // era 2500ms
+})
 
-      fetch(SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-        keepalive: true,
-        signal: controller.signal
-      })
-        .then(r => {
-          clearTimeout(fetchTimeout);
-          clearTimeout(avisoEspera);
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.text();
-        })
-        .then(resposta => {
-          if (resposta.trim().startsWith("❌")) {
-            // Servidor rejeitou — permite tentar de novo
-            atualizarMsg(resposta.trim(), "#e74c3c");
-            jaEnviado = false;
-          } else {
-            // ✅ Só mostra sucesso após confirmação real do servidor
-            atualizarMsg(`✅ ${tipo} confirmada!`, "#27ae60");
-          }
-        })
-        .catch(err => {
-          clearTimeout(fetchTimeout);
-          clearTimeout(avisoEspera);
-          jaEnviado = false; // libera nova tentativa sem rescanear
+.catch(function(err) {
 
-          if (err.name === "AbortError") {
-            // Antes: silencioso. Agora: avisa claramente
-            atualizarMsg("⚠️ Servidor não respondeu. Tente bater o ponto novamente.", "#e67e22");
-            mostrarPopup("⚠️ Sem resposta — tente de novo");
-          } else {
-            atualizarMsg("❌ Erro de conexão. Verifique o Wi-Fi.", "#e74c3c");
-            mostrarPopup("❌ Falha ao enviar");
-          }
-        });
-    })
-    .catch(err => {
-      atualizarMsg("");
-      mostrarPopup(err.message || "Erro ao obter localização");
-    });
+  clearTimeout(timeout);
+
+  atualizarMsg("");
+
+  jaEnviado = false;
+
+  mostrarPopup(
+    err.message ||
+    "Erro ao obter localização"
+  );
+});
 }
   </script>
 </body>
