@@ -215,7 +215,7 @@ function obterMelhorPosicao() {
           if (leituras >= LEITURAS_GPS) {
             clearTimeout(globalTimeout);
             melhor.coords.accuracy > ACCURACY_MAXIMA
-              ? reject(new Error(`GPS impreciso (${Math.round(melhor.coords.accuracy)}m)`))
+              ? reject(new Error(`GPS impreciso (${Math.round(melhor.coords.accuracy)}m) Tente Novamente`))
               : resolve(melhor);
             return;
           }
